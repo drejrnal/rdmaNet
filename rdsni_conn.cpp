@@ -121,7 +121,8 @@ int rdsni_resources_destroy(rdsni_resources_blk *resources){
 
 
 
-/* qp创建(connected qp and dgram qp)
+/*
+ * qp创建(connected qp and dgram qp)
  *  @Param cb control block(resources struct)
 */
 void rdsni_create_conn_qps(rdsni_resources_blk *cb){
@@ -135,6 +136,8 @@ void rdsni_create_conn_qps(rdsni_resources_blk *cb){
         create_attr.send_cq = cb->conn_cq[i];
         create_attr.recv_cq = cb->conn_cq[i];
         create_attr.qp_type = cb->conn_config.use_uc ? IBV_QPT_UC : IBV_QPT_RC;
+        //if this value is set to 1, all send request will generate CQE, if set to 0, only wrs that are flagged will generate CQE
+        create_attr.sq_sig_all = 0;
 
         create_attr.cap.max_send_wr = cb->conn_config.sq_depth;
         create_attr.cap.max_recv_wr = 1; // connectted qps不执行post_recv操作
@@ -191,7 +194,8 @@ void rdsni_create_dgram_qps(rdsni_resources_blk *cb){
         create_attr.srq = nullptr;
         create_attr.cap.max_recv_wr = recv_queue_depth;
         create_attr.cap.max_recv_sge = 1;
-
+        //if this value is set to 1, all send request will generate CQE, if set to 0, only wrs that are flagged will generate CQE
+        create_attr.sq_sig_all = 0;
         create_attr.qp_type = IBV_QPT_UD;
         cb->dgram_qp[i] = ibv_create_qp( cb->pd, &create_attr );
         assert(cb->dgram_qp[i] != nullptr);

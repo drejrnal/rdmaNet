@@ -18,8 +18,12 @@ static constexpr size_t RESPONSE_BUF_SIZE = 16;//response buffer size
 /*
  * 可作为命令行参数
  */
-static constexpr size_t postListSize = 16;
-
+static constexpr size_t postListSize = 32;
+/*
+ * batch send-recv 采用batch发送后，相比于Non-batch吞吐量提升效果明显
+ * 进一步增加batch大小，提升幅度较小
+ * （batchSize变成64，相应的其他参数也变化，缓冲区大小由4096变成8192、相应的修改ib_comm.h的参数kRdsniSQDepth到512）
+ */
 void run_server(){
     int srv_gid = 0;
     size_t ib_port_index = 0;
@@ -28,7 +32,7 @@ void run_server(){
     dgram_config.num_qps = kRdsniNumQPs;
     dgram_config.buf_size = kRdsniBufSize;
 
-    //datagram-oriented so @Param conn_config  is NULL
+    //datagram-oriented so @Param conn_config is NULL
     auto *cb = rdsni_resources_init(srv_gid, ib_port_index, nullptr, &dgram_config);
 
     //buffer to send responses from
@@ -65,6 +69,7 @@ void run_server(){
     memset( ah, 0, sizeof(ah) );
 
     struct ibv_send_wr wr[kRdsniPostlist], *bad_send_wr;
+    memset( wr, 0, sizeof(wr) );
     struct ibv_recv_wr recv_wr[kRdsniPostlist], *bad_recv_wr;
     struct ibv_wc wc[kRdsniPostlist];
     struct ibv_sge sgl[kRdsniPostlist]; //for batch recv after polling cq returns
@@ -91,7 +96,7 @@ void run_server(){
             double seconds = (end.tv_sec - start.tv_sec) +
                              (end.tv_nsec - start.tv_nsec) / 1000000000.0;
             tput = rolling_iter / seconds/1000000;
-            printf("main: Server: %.2f Mops.\n",tput);
+            printf("main: Server: %.3f Mops.\n",tput);
             break;
         }
         size_t num_comps = ibv_poll_cq( cb->dgram_recv_cq[0], postListSize, wc );
@@ -163,9 +168,7 @@ void run_server(){
             rdsni_msgx("Error:%s,in run_server()[ibv_post_send()]", strerror(errno));
             exit(-1);
         }
-
         //rdsni_msgx("before polling cq for send qp");
-
     }
     rdsni_resources_destroy(cb);
 }
@@ -215,6 +218,7 @@ void run_client(char *server){
 
     //client端发送writting request
     struct ibv_send_wr wr[kRdsniPostlist], *bad_send_wr;
+    memset( wr, 0, sizeof(wr) );
     struct ibv_wc wc[kRdsniPostlist];
     struct ibv_sge sgl[kRdsniPostlist];
     size_t rolling_iter = 0;  // For throughput measurement
@@ -228,7 +232,7 @@ void run_client(char *server){
             clock_gettime(CLOCK_REALTIME, &end);
             double seconds = (end.tv_sec - start.tv_sec) +
                              (end.tv_nsec - start.tv_nsec) / 1000000000.0;
-            printf("main: Client: %.2f Mops.\n", rolling_iter / seconds/1000000);
+            printf("main: Client: %.3f Mops.\n", rolling_iter / seconds/1000000);
             break;
         }
         for (size_t w_i = 0; w_i < postListSize; w_i++) {

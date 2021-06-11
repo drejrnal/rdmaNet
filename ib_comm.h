@@ -8,14 +8,16 @@
 
 static constexpr size_t kRdsniMaxUDQPs = 256;
 static constexpr size_t kRdsniQPNameSize = 64;
+//Maximum number of outstanding send requests in the send queue
 static constexpr size_t kRdsniSQDepth = 128; // depth of all send queues
 /*
  * 该参数决定可以往receive queue中发送recv请求数量的最大值
+ * Maximum number of outstanding receive requests (buffers) in the receive queue
  */
 static constexpr size_t kRdsniRQDepth = 2048; //depth of all receive queues
 static constexpr size_t kRdsniPostlist = 64; //for batch send
 
-static constexpr uint32_t kRdsniMaxInline = 16; //一次send inline操作inline最大数据大小
+static constexpr uint32_t kRdsniMaxInline = 16; //Maximum size in bytes of inline data on the send queue
 static constexpr uint32_t kRdsniDefaultQKey =  0x11111111;
 static constexpr uint32_t kRdsniDefaultPSN =  3185;
 

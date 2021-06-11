@@ -13,11 +13,11 @@ static constexpr int service_port = DefaultPort;
 static constexpr size_t RESPONSE_BUF_SIZE = 16;
 static constexpr size_t REQUEST_BUF_SIZE = 16;
 
-static constexpr size_t postListSize = 16;
+static constexpr size_t postListSize = 32;
 /*
  *  测试server端同client端 reliable write方式的点对点数据传输
- *  server端等待client端数据传输，client端发送字符串后
- *  server端收到后回复client端
+ *  server端进行batch post,每隔postListSize个wqe，执行poll cq
+ *  测量server端和client端各自吞吐量
  */
 void run_server(){
     int srv_gid = 0;
@@ -61,6 +61,7 @@ void run_server(){
      * server---client端rdma write方式通信
      */
     struct ibv_send_wr wr[kRdsniPostlist], *bad_send_wr;
+    memset( wr, 0, sizeof(wr) );
     struct ibv_sge sgl[kRdsniPostlist];
     struct ibv_wc wc; //server端
 
@@ -159,6 +160,7 @@ void run_client(char *server){
      * client---server端rdma write方式通信
      */
     struct ibv_send_wr wr[kRdsniPostlist], *bad_send_wr;
+    memset( wr, 0, sizeof(wr) );
     struct ibv_sge sgl[kRdsniPostlist];
     struct ibv_wc wc; //server端
 
