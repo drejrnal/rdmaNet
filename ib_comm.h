@@ -161,7 +161,9 @@ int rdsni_post_batch_send(struct rdsni_resources_blk *cb,
 
 int rdsni_post_batch_read(struct rdsni_resources_blk *cb,int qp_i, struct rdsni_qp_attr_t *remote_qp_info, int *peer_counter, int batch_size);
 
-int rdsni_post_batch_write(struct rdsni_resources_blk *cb,int qp_i, struct rdsni_qp_attr_t *remote_qp_info, int *peer_counter, int batch_size, uint32_t imm);
+int rdsni_post_batch_write(struct rdsni_resources_blk *cb,int qp_i,
+        struct rdsni_qp_attr_t *remote_qp_info, int byte_per_wr, int *counter,
+        int signal_batch, int batch_size, uint32_t imm);
 
 
 /*

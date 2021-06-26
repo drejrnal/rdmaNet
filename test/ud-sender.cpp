@@ -81,12 +81,7 @@ void run_client(char *server){
     rdsni_msgx("run_client()- qp state:%d, dest qp num:%d,  qp number %d", 
                                         attr.qp_state,attr.dest_qp_num, cb->dgram_qp[0]->qp_num);
     //client端作为接收端，往receive queue中添加WR
-    /*for(size_t i = 0; i <kRdsniRQDepth; i++){
-        //rdsni_post_dgram_recv(cb->dgram_qp[0],const_cast<uint8_t*>(cb->dgram_buf),
-        //            cb->dgram_buf_mr->lkey);
-        rdsni_post_dgram_recv( cb->dgram_qp[0],const_cast<char *>(cb->dgram_buf),
-                                        cb->dgram_buf_mr->lkey );
-    }*/
+
     struct rdsni_qp_attr_t *server_qp = (struct rdsni_qp_attr_t *) 
                                         malloc(sizeof(struct rdsni_qp_attr_t));
 
@@ -129,9 +124,9 @@ void run_client(char *server){
     wr.send_flags |= IBV_SEND_INLINE;
 
     sgl.addr = reinterpret_cast<uint64_t>(cb->dgram_buf);
-    //todo::确定大小
+
     sgl.length = FLAG_SIZE;
-    //todo::ah
+
     wr.wr.ud.ah = ah;
     wr.wr.ud.remote_qpn = server_qp->qpn;
     wr.wr.ud.remote_qkey = kRdsniDefaultQKey;

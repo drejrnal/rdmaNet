@@ -33,7 +33,6 @@ void run_server(){
      * server端MR区域占据的内存初始化为0
      */
     auto *cb = rdsni_resources_init(srv_gid, ib_port_index, &conn_config, nullptr);
-
     //memset(const_cast<uint8_t *>(cb->conn_buf), static_cast<uint8_t>(srv_gid)+1, kRdsniBufSize);
     /*
      * buffer to send response from
@@ -86,10 +85,13 @@ void run_server(){
             //do nothing
         }
         /*
-         * TODO::cb->conn_buf[64]和cb->conn_buf[128]应该也是1,但是输出却是0 不知为何？
-        rdsni_msgx( "server get request from client: %d %d %d",
+         * cb->conn_buf[64]和cb->conn_buf[128]应该也是1,但是输出却是0 不知为何？
+         * 说明client端的数据并未全部发到server端，这也是write吞吐量比send高的原因之一，因为
+         * write的话不需要接收全部请求即可发送回复，而send需要等recv cq达到一定数量后才可send
+         * 当然上述情形适用于双端通信
+         * rdsni_msgx( "server get request from client: %d %d %d",
                     cb->conn_buf[0],cb->conn_buf[64], cb->conn_buf[128] );
-        */
+         */
         cb->conn_buf[0] = 0;
         for( int w_i = 0; w_i < postListSize; w_i++ ){
             wr[w_i].opcode = IBV_WR_RDMA_WRITE;

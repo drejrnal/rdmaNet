@@ -130,12 +130,7 @@ void run_client(char *server){
     rdsni_msgx("run_client()- qp state:%d, dest qp num:%d,  qp number %d",
                attr.qp_state,attr.dest_qp_num, cb->dgram_qp[0]->qp_num);
     //client端作为接收端，往receive queue中添加WR
-    /*for(size_t i = 0; i <kRdsniRQDepth; i++){
-        //rdsni_post_dgram_recv(cb->dgram_qp[0],const_cast<uint8_t*>(cb->dgram_buf),
-        //            cb->dgram_buf_mr->lkey);
-        rdsni_post_dgram_recv( cb->dgram_qp[0],const_cast<char *>(cb->dgram_buf),
-                                        cb->dgram_buf_mr->lkey );
-    }*/
+
     for( int i = 0; i < kRdsniRQDepth; i++ )
         rdsni_post_dgram_recv( cb->dgram_qp[0], const_cast<char *>(cb->dgram_buf),
                                FLAG_SIZE+40, cb->dgram_buf_mr->lkey );
@@ -182,9 +177,9 @@ void run_client(char *server){
     wr.send_flags |= IBV_SEND_INLINE;
 
     sgl.addr = reinterpret_cast<uint64_t>(cb->dgram_buf);
-    //todo::确定大小
+
     sgl.length = FLAG_SIZE;
-    //todo::ah
+
     wr.wr.ud.ah = ah;
     wr.wr.ud.remote_qpn = server_qp->qpn;
     wr.wr.ud.remote_qkey = kRdsniDefaultQKey;
@@ -194,12 +189,12 @@ void run_client(char *server){
 
     rdsni_poll_cq( cb->dgram_send_cq[0], 1, &wc );
 
-    //client端发送send request,wc.qp_num记录了send request到哪个qp
-    //printf("client send request %d complete from qp %d\n", wc.wr_id, wc.qp_num );
-
     struct ibv_wc wc2;
     rdsni_poll_cq( cb->dgram_recv_cq[0], 1, &wc2 );
-    printf( "client receive response from server qp : %d,Ccotent: %d %d %d\n",
+    /*
+     * 注意此处 接收到的数据从偏移量40开始，40之前是ibv_gh相关数据
+     */
+    printf( "client receive response from server qp : %d,Content: %d %d %d\n",
             wc2.src_qp, cb->dgram_buf[40], cb->dgram_buf[55],cb->dgram_buf[57] );
 
     rdsni_resources_destroy(cb);

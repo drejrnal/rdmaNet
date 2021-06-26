@@ -3,7 +3,7 @@
 
 static constexpr size_t MAX_POST_LIST = 128; //往send/receive queue一次batch操作
 static constexpr size_t BUF_SIZE = 4096; //注册到MR的缓冲区大小
-static constexpr size_t SIGNAL_BATCH = 64; //每隔SIGNAL_BATCH个WR向对应的CQ写入CQE
+static constexpr size_t SIGNAL_BATCH = 16; //每隔SIGNAL_BATCH个WR向对应的CQ写入CQE
 
 int rdsni_post_send(struct rdsni_resources_blk *cb, int qp_i,  
         struct rdsni_qp_attr_t *remote_qp_info){
@@ -232,14 +232,24 @@ int rdsni_post_write(struct rdsni_resources_blk *cb, int qp_i,
     return 0;
 }
 
-
+/**
+ * @Param qp_i connected qp number from which write request send
+ * @Param remote_qp_info qp and MR attribute from another end
+ * @Param byte_per_wr 每个wr携带的数据量
+ * @Param counter 目前已经send的次数
+ * @Param batch_size 调用者计算好，传入函数内，比如如果想传输4K大小的数据，
+ *        每个wr携带数据量为512，则可将batch size设置为8次
+ */
 
 int rdsni_post_batch_write(struct rdsni_resources_blk *cb, int qp_i,  
-        struct rdsni_qp_attr_t *remote_qp_info, int *peer_counter, 
-        int batch_size, uint32_t  imm){
+        struct rdsni_qp_attr_t *remote_qp_info, int byte_per_wr, int *counter,
+        int signal_batch, int batch_size, uint32_t imm){
     struct ibv_send_wr wr[MAX_POST_LIST], *bad_send_wr;
     struct ibv_sge sgl[MAX_POST_LIST];
     struct ibv_wc wc;
+
+    memset(wr, 0, sizeof(wr) );
+    memset(sgl, 0, sizeof(sgl) );
 
     for(int w_i = 0; w_i < batch_size; w_i++){
         
@@ -251,24 +261,27 @@ int rdsni_post_batch_write(struct rdsni_resources_blk *cb, int qp_i,
         }
         wr[w_i].num_sge = 1;
 
-        sgl[w_i].addr = reinterpret_cast<uint64_t>(cb->conn_buf + w_i * 1024);
-        sgl[w_i].length = BUF_SIZE;
+        sgl[w_i].addr = reinterpret_cast<uint64_t>(cb->conn_buf + (*counter) * byte_per_wr);
+        sgl[w_i].length = byte_per_wr;
         sgl[w_i].lkey = cb->conn_buf_mr->lkey;
 
         wr[w_i].sg_list = &sgl[w_i];
         wr[w_i].next = (w_i == (batch_size - 1) ? nullptr : &wr[w_i+1]);
 
-        wr[w_i].wr.rdma.remote_addr = remote_qp_info->buf_addr + w_i * 1024;
+        wr[w_i].wr.rdma.remote_addr = remote_qp_info->buf_addr + *(counter) * byte_per_wr;
         wr[w_i].wr.rdma.rkey = remote_qp_info->rkey;
 
-        wr[w_i].send_flags = ( (*peer_counter % SIGNAL_BATCH == 0) ? IBV_SEND_SIGNALED : 0);
-        
-        if( (*peer_counter%SIGNAL_BATCH == 0) && *peer_counter > 0 )
-            rdsni_poll_cq(cb->conn_cq[qp_i], 1, &wc);
+        wr[w_i].send_flags = ((*counter)%signal_batch==0) ? IBV_SEND_SIGNALED : 0;
 
-        *peer_counter++;
+        (*counter)++;
     }
     int ret = ibv_post_send(cb->conn_qp[qp_i], &wr[0], &bad_send_wr);
+    /*
+        * 比如编号为0-7 8-15的wr完成send后，此时*counter=15，poll from send cq
+        * 后续send增加*counter的值 需要满足SIGNAL_BATCH被batch_size整除
+        */
+    if( *counter > 0 && (*counter%(signal_batch) == 0) )
+        rdsni_poll_cq(cb->conn_cq[qp_i], 1, &wc);
     assert( ret == 0 );
 
     return 0;

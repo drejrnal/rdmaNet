@@ -6,7 +6,7 @@
 #include "../sock.h"
 
 #define DefaultPort 13211
-static constexpr size_t kRdsniNumQPs = 1;
+static constexpr size_t kRdsniNumQPs = 4;
 static constexpr size_t kRdsniBufSize = 4096;
 static constexpr size_t kRdsniUnsigBatch = 64;
 static constexpr size_t kRdsniMaxLID = 4; //根据struct ibv_wc内的slid识别对端lid,并创建对应的ah,同该端传输数据
@@ -75,16 +75,20 @@ void run_server(){
     struct ibv_sge sgl[kRdsniPostlist]; //for batch recv after polling cq returns
 
     size_t rolling_iter = 0;
+    /*
+     * 与多qp发送/接收相关
+     */
+    size_t num_opt[kRdsniNumQPs]; //num_opt[0]表示0号qp操作总数
+    size_t qp_cur = 0; //当前qp编号
 
     size_t recv_offset = 0;
     while ( recv_offset < FLAG_SIZE + 40 ) recv_offset +=64;
     assert( recv_offset * postListSize < dgram_config.buf_size );
     rdsni_msgx("receive offset for each WR in receive queue:%d", recv_offset );
 
+    double tput = 0.0;
     struct timespec start, end;
     clock_gettime( CLOCK_REALTIME, &start);
-
-    double tput = 0.0;
     /*
      * server端等待client端send/write with IMM
      * server端轮询receive qp对应的completion qp，直到有wc在cq中产生
@@ -92,6 +96,8 @@ void run_server(){
     while (1){
         if( rolling_iter >= 1024 ){
             //性能测试
+            //rdsni_msgx("qp at index 0 send %d requests", num_opt[0] );
+            //rdsni_msgx("qp at index 1 send %d requests", num_opt[1] );
             clock_gettime(CLOCK_REALTIME, &end);
             double seconds = (end.tv_sec - start.tv_sec) +
                              (end.tv_nsec - start.tv_nsec) / 1000000000.0;
@@ -128,7 +134,7 @@ void run_server(){
         for( size_t w_i = 0; w_i < num_comps; w_i++ ){
             int s_lid = wc[w_i].slid;
             if (ah[s_lid] == nullptr) {
-                rdsni_msgx("client IB local identifier: %d", s_lid );
+                //rdsni_msgx("client IB local identifier: %d", s_lid );
                 struct ibv_ah_attr ah_attr;
                 memset(&ah_attr, 0, sizeof(ah_attr));
                 ah_attr.is_global = 0;
@@ -150,24 +156,24 @@ void run_server(){
             wr[w_i].sg_list = &sgl[w_i];
 
             wr[w_i].send_flags =
-                    ( rolling_iter % kRdsniUnsigBatch == 0 ) ? IBV_SEND_SIGNALED : 0;
-            if( rolling_iter % kRdsniUnsigBatch == (kRdsniUnsigBatch - 1) ){
+                    ( num_opt[qp_cur] % kRdsniUnsigBatch == 0 ) ? IBV_SEND_SIGNALED : 0;
+            if( num_opt[qp_cur] % kRdsniUnsigBatch == (kRdsniUnsigBatch - 1) ){
                 struct ibv_wc signal_wc;
-                //rdsni_msgx("server: Before polling send completion queue");
-                rdsni_poll_cq( cb->dgram_send_cq[0], 1, &signal_wc );
-                //rdsni_msgx("server: After polling send completion queue");
+                rdsni_poll_cq( cb->dgram_send_cq[qp_cur], 1, &signal_wc );
             }
             wr[w_i].send_flags |= IBV_SEND_INLINE;
             sgl[w_i].addr = reinterpret_cast<uint64_t>(response_buffer);
             sgl[w_i].length = RESPONSE_BUF_SIZE;
 
             rolling_iter++;
+            num_opt[qp_cur]++;
         }
-
-        if( ibv_post_send(cb->dgram_qp[0], &wr[0], &bad_send_wr) ){
+        if( ibv_post_send(cb->dgram_qp[qp_cur], &wr[0], &bad_send_wr) ){
             rdsni_msgx("Error:%s,in run_server()[ibv_post_send()]", strerror(errno));
             exit(-1);
         }
+        qp_cur++;
+        if( qp_cur == kRdsniNumQPs ) qp_cur = 0;
         //rdsni_msgx("before polling cq for send qp");
     }
     rdsni_resources_destroy(cb);
@@ -256,18 +262,13 @@ void run_client(char *server){
 
             rolling_iter++;
         }
-
         int ret = ibv_post_send(cb->dgram_qp[0], &wr[0], &bad_send_wr);
         CPE(ret, "ibv_post_send_error", ret);
-        //rdsni_msgx("before polling completion qp");
         rdsni_poll_cq(cb->dgram_send_cq[0], 1, wc);
-        //rdsni_msgx( "send wr consumed by send cq");
-
         /*
          * server端发送send response,client端阻塞在recv cq上
          */
         rdsni_poll_cq(cb->dgram_recv_cq[0], postListSize, wc);
-        //rdsni_msgx( "recv wr consumed by recv cq");
     }
     rdsni_resources_destroy(cb);
 }
